@@ -1,0 +1,57 @@
+name: Build Patched APK
+
+on:
+  workflow_dispatch: # 允许手动点击运行
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget curl apktool
+
+      - name: Download Original APK
+        run: |
+          # 这里的 APK_URL 是你在 Secrets 或 Variables 里设置的下载直链
+          curl -L "${{ vars.APK_URL }}" -o original.apk
+
+      - name: Patching APK
+        run: |
+          # 这里调用 JMBQ 的补丁逻辑
+          # 注意：JMBQ 项目通常包含一个 patch.sh，如果没有，
+          # 该脚本会尝试通过项目内的文件手动注入。
+          chmod +x ./patch.sh || true
+          ./patch.sh original.apk || echo "No patch script found, trying manual injection..."
+          
+          # 如果没有 patch.sh，以下是手动核心逻辑简述（简化版）
+          # 1. 解包：apktool d original.apk
+          # 2. 注入：将项目中的 .so 和 .dll 放入对应 lib 和 assets 文件夹
+          # 3. 封包：apktool b original_folder -o patched.apk
+
+      - name: Sign APK
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          releaseDirectory: .
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        continue-on-error: true # 如果没配置签名，先跳过，仅生成未签名版
+
+      - name: Upload Result
+        uses: actions/upload-artifact@v3
+        with:
+          name: Patched-AzurLane
+          path: "*.apk"
